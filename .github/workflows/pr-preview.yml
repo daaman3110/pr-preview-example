@@ -13,10 +13,10 @@ jobs:
     if: github.event.action != 'closed'
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout (workflow context)
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Deploy PR to EC2 Instance
+      - name: Deploy PR to EC2
         uses: appleboy/ssh-action@v1.2.2
         with:
           host: ${{ secrets.EC2_HOST }}
@@ -27,33 +27,33 @@ jobs:
             PR=${{ github.event.pull_request.number }}
             REPO_URL='${{ github.event.pull_request.head.repo.clone_url }}'
             BRANCH='${{ github.event.pull_request.head.ref }}'
-            
-            # Strip any newline / whitespace from secret
-            PREVIEW_DOMAIN="$(echo -n '${{ secrets.PREVIEW_DOMAIN }}' | tr -d '\n')"
-
             TARGET_DIR="/home/${{ secrets.EC2_USER }}/previews/preview-pr-$PR"
-            echo "Deploying PR #$PR to domain: $PREVIEW_DOMAIN"
 
-            # cleanup old workspace
+            echo "Deploying PR #$PR"
+
+            # Fetch EC2 public IP
+            EC2_PUBLIC_IP=$(curl -s http://checkip.amazonaws.com)
+            PREVIEW_DOMAIN="${EC2_PUBLIC_IP}.nip.io"
+            PREVIEW_DOMAIN=$(echo -n "$PREVIEW_DOMAIN" | tr -d '\n\r ')
+            echo "Preview domain: $PREVIEW_DOMAIN"
+
+            # Cleanup old workspace
             rm -rf "$TARGET_DIR"
             mkdir -p "$TARGET_DIR"
 
-            # clone PR head (works for forks)
+            # Clone PR head (works for forks)
             git clone --depth 1 --branch "$BRANCH" "$REPO_URL" "$TARGET_DIR"
 
             cd "$TARGET_DIR"
 
-            # build docker image on EC2
+            # Build Docker image on EC2
             docker build -t preview-pr-$PR .
 
-            # stop & remove old container if exists
+            # Stop & remove old container if exists
             docker stop preview-pr-$PR 2>/dev/null || true
             docker rm preview-pr-$PR 2>/dev/null || true
 
-            # export Doppler token
-            export DOPPLER_TOKEN="${{ secrets.DOPPLER_TOKEN }}"
-
-            # run container with Traefik + Doppler secrets
+            # Run container with Traefik labels + Doppler secrets
             doppler run --token "${{ secrets.DOPPLER_TOKEN }}" \
               --project "pr-preview-demo" \
               --config "pr" \
@@ -75,7 +75,7 @@ jobs:
           issue-number: ${{ github.event.pull_request.number }}
           body: |
             🚀 **Preview ready**
-            http://pr-${{ github.event.pull_request.number }}.${{ secrets.PREVIEW_DOMAIN }}
+            http://pr-${{ github.event.pull_request.number }}.${{ secrets.EC2_HOST }}.nip.io
 
   cleanup:
     if: github.event.action == 'closed'
