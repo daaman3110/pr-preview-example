@@ -16,7 +16,7 @@ jobs:
       - name: Checkout (workflow context)
         uses: actions/checkout@v4
 
-      - name: Deploy PR to EC2 
+      - name: Deploy PR to EC2 Instance
         uses: appleboy/ssh-action@v1.2.2
         with:
           host: ${{ secrets.EC2_HOST }}
