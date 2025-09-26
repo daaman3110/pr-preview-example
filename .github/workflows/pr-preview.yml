@@ -49,10 +49,12 @@ jobs:
             docker rm preview-pr-$PR 2>/dev/null || true
 
             # export Doppler token (copied manually for now)
-            export DOPPLER_TOKEN='YOUR_DOPPLER_TOKEN_HERE'
+            export DOPPLER_TOKEN="${{ secrets.DOPPLER_TOKEN }}"
 
-            # run container with Traefik labels and secrets from Doppler
-            doppler run -- docker run -d --network web --name preview-pr-$PR \
+            # run container with Traefik + Doppler secrets
+            doppler run --token "${{ secrets.DOPPLER_TOKEN }}" -- docker run -d \
+              --network web \
+              --name preview-pr-$PR \
               --label traefik.enable=true \
               --label "traefik.http.routers.preview-pr-$PR.rule=Host('pr-$PR.${PREVIEW_DOMAIN}')" \
               --label "traefik.http.services.preview-pr-$PR.loadbalancer.server.port=80" \
@@ -75,7 +77,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Cleanup preview on EC2
-        uses: appleboy/ssh-action@v1.3.0
+        uses: appleboy/ssh-action@v1.2.2
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
