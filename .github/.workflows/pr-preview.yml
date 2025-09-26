@@ -1,0 +1,99 @@
+name: PR Preview (Traefik + Doppler)
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, closed]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  deploy:
+    if: github.event.action != 'closed'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (workflow context)
+        uses: actions/checkout@v4
+
+      - name: Deploy PR to EC2
+        uses: appleboy/ssh-action@v1.3.0
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            set -euo pipefail
+            PR=${{ github.event.pull_request.number }}
+            REPO_URL='${{ github.event.pull_request.head.repo.clone_url }}'
+            BRANCH='${{ github.event.pull_request.head.ref }}'
+            PREVIEW_DOMAIN='${{ secrets.PREVIEW_DOMAIN }}'
+            TARGET_DIR="/home/${{ secrets.EC2_USER }}/previews/preview-pr-$PR"
+
+            echo "Deploying PR #$PR"
+
+            # cleanup old workspace
+            rm -rf "$TARGET_DIR"
+            mkdir -p "$TARGET_DIR"
+
+            # clone PR head (works for forks)
+            git clone --depth 1 --branch "$BRANCH" "$REPO_URL" "$TARGET_DIR"
+
+            cd "$TARGET_DIR"
+
+            # build docker image on EC2
+            docker build -t preview-pr-$PR .
+
+            # stop & remove old container if exists
+            docker stop preview-pr-$PR 2>/dev/null || true
+            docker rm preview-pr-$PR 2>/dev/null || true
+
+            # export Doppler token (copied manually for now)
+            export DOPPLER_TOKEN='YOUR_DOPPLER_TOKEN_HERE'
+
+            # run container with Traefik labels and secrets from Doppler
+            doppler run -- docker run -d --network web --name preview-pr-$PR \
+              --label traefik.enable=true \
+              --label "traefik.http.routers.preview-pr-$PR.rule=Host('pr-$PR.${PREVIEW_DOMAIN}')" \
+              --label "traefik.http.services.preview-pr-$PR.loadbalancer.server.port=80" \
+              preview-pr-$PR
+
+            echo "Deployed preview: http://pr-$PR.${PREVIEW_DOMAIN}"
+
+      - name: Comment PR with preview URL
+        if: github.event.action != 'closed'
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          issue-number: ${{ github.event.pull_request.number }}
+          body: |
+            🚀 **Preview ready**
+            http://pr-${{ github.event.pull_request.number }}.${{ secrets.PREVIEW_DOMAIN }}
+
+  cleanup:
+    if: github.event.action == 'closed'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Cleanup preview on EC2
+        uses: appleboy/ssh-action@v1.3.0
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            set -euo pipefail
+            PR=${{ github.event.pull_request.number }}
+            TARGET_DIR="/home/${{ secrets.EC2_USER }}/previews/preview-pr-$PR"
+            echo "Cleaning preview for PR #$PR"
+
+            docker stop preview-pr-$PR 2>/dev/null || true
+            docker rm preview-pr-$PR 2>/dev/null || true
+            rm -rf "$TARGET_DIR" || true
+
+      - name: Comment PR - preview destroyed
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          issue-number: ${{ github.event.pull_request.number }}
+          body: |
+            🧹 Preview for PR #${{ github.event.pull_request.number }} has been destroyed.
