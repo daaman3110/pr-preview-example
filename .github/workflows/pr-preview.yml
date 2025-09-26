@@ -51,7 +51,7 @@ jobs:
             # export Doppler token (copied manually for now)
             export DOPPLER_TOKEN="${{ secrets.DOPPLER_TOKEN }}"
 
-            # run container with Traefik + Doppler secrets
+            # run container with Traefik + Doppler secrets 
             doppler run --token "${{ secrets.DOPPLER_TOKEN }}" \
               --project "pr-preview-demo" \
               --config "pr" \
