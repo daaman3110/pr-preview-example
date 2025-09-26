@@ -54,7 +54,7 @@ jobs:
             # run container with Traefik + Doppler secrets
             doppler run --token "${{ secrets.DOPPLER_TOKEN }}" \
               --project "pr-preview-demo" \
-              --config "pr-preview-demo" \
+              --config "pr" \
               -- docker run -d \
               --network web \
               --name preview-pr-$PR \
