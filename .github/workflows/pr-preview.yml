@@ -61,7 +61,7 @@ jobs:
                  --network web \
                  --name preview-pr-$PR \
                  --label traefik.enable=true \
-                 --label "traefik.http.routers.preview-pr-$PR.rule=Host('pr-$PR.${PREVIEW_DOMAIN}')" \
+                 --label "traefik.http.routers.preview-pr-$PR.rule=HostRegexp(\`pr-$PR.${PREVIEW_DOMAIN}\`)" \
                  --label "traefik.http.services.preview-pr-$PR.loadbalancer.server.port=80" \
                  preview-pr-$PR
 
