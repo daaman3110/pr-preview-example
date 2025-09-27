@@ -24,13 +24,13 @@ jobs:
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
             set -euo pipefail
+
             PR=${{ github.event.pull_request.number }}
             REPO_URL='${{ github.event.pull_request.head.repo.clone_url }}'
             BRANCH='${{ github.event.pull_request.head.ref }}'
-            PREVIEW_DOMAIN="whattimeisit.it.com"
             TARGET_DIR="/home/${{ secrets.EC2_USER }}/previews/preview-pr-$PR"
 
-            echo "Deploying PR #$PR to $PREVIEW_DOMAIN"
+            echo "Deploying PR #$PR"
 
             # Cleanup old workspace
             rm -rf "$TARGET_DIR"
@@ -38,7 +38,6 @@ jobs:
 
             # Clone PR head (works for forks)
             git clone --depth 1 --branch "$BRANCH" "$REPO_URL" "$TARGET_DIR"
-
             cd "$TARGET_DIR"
 
             # Build Docker image on EC2
@@ -48,7 +47,11 @@ jobs:
             docker stop preview-pr-$PR 2>/dev/null || true
             docker rm preview-pr-$PR 2>/dev/null || true
 
-            # Run container with Traefik labels + Doppler secrets
+            # Set preview domain
+            PREVIEW_DOMAIN='whattimeisit.it.com'
+            CLEAN_DOMAIN=$(echo -n "$PREVIEW_DOMAIN" | tr -d '\n\r ')
+
+            # Run container with Traefik + Doppler secrets
             doppler run --token "${{ secrets.DOPPLER_TOKEN }}" \
               --project "pr-preview-demo" \
               --config "pr" \
@@ -56,11 +59,11 @@ jobs:
                  --network web \
                  --name preview-pr-$PR \
                  --label traefik.enable=true \
-                 --label "traefik.http.routers.preview-pr-$PR.rule=Host('pr-$PR.${PREVIEW_DOMAIN}')" \
+                 --label "traefik.http.routers.preview-pr-$PR.rule=Host('pr-$PR.$CLEAN_DOMAIN')" \
                  --label "traefik.http.services.preview-pr-$PR.loadbalancer.server.port=80" \
                  preview-pr-$PR
 
-            echo "Deployed preview: http://pr-$PR.${PREVIEW_DOMAIN}"
+            echo "Deployed preview: http://pr-$PR.$CLEAN_DOMAIN"
 
       - name: Comment PR with preview URL
         if: github.event.action != 'closed'
